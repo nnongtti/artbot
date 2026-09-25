@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# 사용법:
+#   1. 이 파일을 레포의 .github/workflows/build-windows-exe.yml 로 저장
+#   2. 아래 env 값 4개를 챌린지에 맞게 수정
+#   3. 이 워크플로우 파일과 소스 폴더를 GitHub에 push
+#   4. GitHub 저장소 -> Actions 탭 -> "Build Windows exe" -> "Run workflow"
+#      (또는 push 시 자동 실행됨)
+#   5. 완료되면 Actions 실행 결과 페이지 하단 Artifacts에서 exe 다운로드
+# ---------------------------------------------------------------------------
+name: Build Windows exe
+
+"on":
+  workflow_dispatch:      # 수동 실행 버튼
+  push:
+    paths:
+      # 주의: 여기 on.push.paths 블록은 env 변수를 못 읽습니다.
+      # 아래 값은 env.CHALLENGE_DIR과 반드시 같은 값으로 직접 적어야 합니다.
+      - 'challenges/artbot/**'
+      - '.github/workflows/build-windows-exe.yml'
+
+env:
+  CHALLENGE_DIR: challenges/artbot           # 소스(artbot.py)가 있는 폴더 경로
+  CHALLENGE_NAME: artbot                     # 만들어질 실행 파일 이름 (artbot.exe)
+  SOURCE_FILE: artbot.py                     # 메인 소스 파일명
+  EXTRA_PYINSTALLER_ARGS: "--collect-data pyfiglet"  # pyfiglet 폰트 데이터 포함 필수
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          if [ -f "${CHALLENGE_DIR}/requirements.txt" ]; then
+            pip install -r "${CHALLENGE_DIR}/requirements.txt"
+          fi
+
+      # 주의: Windows 빌드에서는 --strip을 쓰지 않는다.
+      # (ELF용 옵션이라 Windows PE에는 의미가 없고, 백신 오탐 이슈도 있음)
+      - name: Build exe
+        shell: bash
+        run: |
+          pyinstaller --onefile --name "${CHALLENGE_NAME}" ${EXTRA_PYINSTALLER_ARGS} \
+            "${CHALLENGE_DIR}/${SOURCE_FILE}"
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./dist/${CHALLENGE_NAME}.exe --help || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.CHALLENGE_NAME }}-windows-exe
+          path: dist/${{ env.CHALLENGE_NAME }}.exe
+          retention-days: 30
